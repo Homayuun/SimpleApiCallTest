@@ -8,5 +8,6 @@
 import Foundation
 
 protocol RequestManagerProtocol {
+    func createRequest(from urlString: String) throws -> URLRequest
     func sendRequest(request: URLRequest) throws -> HTTPURLResponse
 }

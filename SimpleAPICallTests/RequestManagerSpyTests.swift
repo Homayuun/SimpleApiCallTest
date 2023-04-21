@@ -11,10 +11,12 @@ import XCTest
 final class RequestManagerSpyTests: XCTestCase {
     
     var requestManagerSpy: RequestManagerSpy!
+    var urlString: String!
     
     override func setUp() {
         super.setUp()
         requestManagerSpy = RequestManagerSpy()
+        urlString = "https://api.apify.com/v2/key-value-stores/SmuuI0oebnTWjRTUh/records/LATEST?disableRedirect=true"
     }
     
     override func tearDown() {
@@ -24,7 +26,7 @@ final class RequestManagerSpyTests: XCTestCase {
     
     
     
-    //when an object of Spy is created, capturedRequests must be empty
+    //when a fresh object of Spy is created, capturedRequests must be empty
     
     func testCapturedRequests_whenNoRequestsSent_isEmpty() {
         
@@ -33,19 +35,38 @@ final class RequestManagerSpyTests: XCTestCase {
         XCTAssertTrue(requestManager.capturedRequests.isEmpty)
     }
     
+    //checks if 'createRequest' correctly creates a valid `URLRequest` object with the expected properties based on a valid URL string
+
+    func testCreateRequest_CreatesARequest() {
+        
+        let urlRequest = try! requestManagerSpy.createRequest(from: urlString)
+        
+        XCTAssertTrue(urlRequest.url?.scheme == "https")
+        XCTAssertTrue(urlRequest.url?.path == "/v2/key-value-stores/SmuuI0oebnTWjRTUh/records/LATEST")
+        XCTAssertTrue(urlRequest.url?.host == "api.apify.com")
+    }
     
+    //when a URLRequest contains empty url, it should return an error
     
+    func testCreateRequest_withInvalidURLString_throwsError() throws {
+        let urlString = ""
+        
+        XCTAssertThrowsError(try requestManagerSpy.createRequest(from: urlString)) { error in
+            XCTAssertEqual(error as! RequestError, RequestError.invalidURL)
+        }
+    }
+
     //sendRequest method correctly adds request to capturedRequests with correct url and correct http method
     
     func testSendRequest_addsRequestToCapturedRequests_withCorrectUrlAndCorrectMethod() {
         
-        let url = URL(string: "https://api.apify.com/v2/key-value-stores/SmuuI0oebnTWjRTUh/records/LATEST?disableRedirect=true")!
-        let request = URLRequest(url: url)
+        let expectedURL = URL(string: urlString)!
+        let request = try? requestManagerSpy.createRequest(from: urlString)
         
-        let _ = try? requestManagerSpy.sendRequest(request: request)
+        let _ = try? requestManagerSpy.sendRequest(request: request!)
         
         XCTAssertEqual(requestManagerSpy.capturedRequests.count, 1)
-        XCTAssertEqual(requestManagerSpy.capturedRequests[0].url, url)
+        XCTAssertEqual(requestManagerSpy.capturedRequests[0].url, expectedURL)
         XCTAssertEqual(requestManagerSpy.capturedRequests[0].httpMethod, "GET")
     }
     
@@ -55,13 +76,13 @@ final class RequestManagerSpyTests: XCTestCase {
     
     func testSendRequest_givenValidRequestAndResponse_succeeds() {
         
-        let url = URL(string: "https://api.apify.com/v2/key-value-stores/SmuuI0oebnTWjRTUh/records/LATEST?disableRedirect=true")!
-        let request = URLRequest(url: url)
+        let url = URL(string: urlString)!
+        let request = try? requestManagerSpy.createRequest(from: urlString)
         
         let expectedResponse = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
-        requestManagerSpy.responseToRequest(request: request, response: expectedResponse)
+        requestManagerSpy.responseToRequest(request: request!, response: expectedResponse)
         
-        let result = try? requestManagerSpy.sendRequest(request: request)
+        let result = try? requestManagerSpy.sendRequest(request: request!)
         
         XCTAssertNotNil(result)
         XCTAssertEqual(result?.statusCode, expectedResponse.statusCode)
@@ -72,7 +93,7 @@ final class RequestManagerSpyTests: XCTestCase {
     // Ensures that the responseToRequest method of the spy behaves as expected.
     
     func testResponseToRequest_addsToItemsDictionary() {
-        let url = URL(string: "https://google.com")!
+        let url = URL(string: urlString)!
         let request = URLRequest(url:url)
         let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
         
@@ -87,52 +108,12 @@ final class RequestManagerSpyTests: XCTestCase {
     
     func testSendRequest_whenResponseNotReturned_throwsError() {
         
-        let validURL = URL(string: "https://api.apify.com/v2/key-value-stores/SmuuI0oebnTWjRTUh/records/LATEST?disableRedirect=true")!
-        let validURLRequest = URLRequest(url: validURL)
+        let validURLRequest = try? requestManagerSpy.createRequest(from: urlString)
         
-        requestManagerSpy.items = [:]
-        
-        var thrownError: Error?
-        
-        XCTAssertThrowsError(try requestManagerSpy.sendRequest(request: validURLRequest)) { error in
-            thrownError = error
-            XCTAssertNotNil(thrownError)
+        requestManagerSpy.responseToRequest(request: validURLRequest!, response: nil)
+                
+        XCTAssertThrowsError(try requestManagerSpy.sendRequest(request: validURLRequest!)) { error in
             XCTAssertEqual(error as? RequestError, RequestError.noResponseFromServer)
         }
     }
-    
-    
-    func testSendRequestThrowsErrorWhenItemsDictionaryDoesNotContainURLRequest() {
-        // Given
-        let spy = RequestManagerSpy()
-        let request = URLRequest(url: URL(string: "https://example.com")!)
-        
-        // When
-        do {
-            try spy.sendRequest(request: request)
-            XCTFail("Expected error to be thrown")
-        } catch RequestError.noResponseFromServer {
-            // Then
-            XCTAssertEqual(spy.capturedRequests, [request])
-        } catch {
-            XCTFail("Unexpected error thrown")
-        }
-    }
-
-    
-    //MARK: - ASK
-//    func testSendRequest_givenInvalidURLRequest_throwsError() {
-//        let validURL = URL(string: "https://api.apify.com/v2/key-value-stores/SmuuI0oebnTWjRTUh/records/LATEST?disableRedirect=true")!
-//        let invalidURL =  URL(string: "https://api.apify.com/v22/key-value-SCORE")!
-//        let invalidRequest = URLRequest(url: invalidURL)
-//        let validRequest = URLRequest(url: validURL)
-//
-//        let mockResponse = HTTPURLResponse(url: validRequest.url!, statusCode: 400, httpVersion: nil, headerFields: nil)!
-//        requestManagerSpy.responseToRequest(request: invalidRequest, response: mockResponse)
-//
-//        XCTAssertThrowsError(try requestManagerSpy.sendRequest(request: invalidRequest)) { error in
-//            XCTAssertEqual(error as? RequestError, RequestError.invalidURL)
-//        }
-//
-//    }
 }
